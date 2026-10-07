@@ -11,19 +11,50 @@
 
 #define DEBUG_EXPR(expr) fprintf(stderr, "%s:%d:%s(): %s: 0x%llX\n", __FILE__, __LINE__, __func__, #expr, (unsigned long long)(expr))
 
+struct cfg
+{
+    int nrof_threads;
+    size_t nrof_file_args;
+    const char *const *file_args;
+};
+struct cfg options(int argc, char* argv[]);
+
 int main(int argc, char* argv[])
 {
-    printf("Starting point for mdu\n");
+    const struct cfg cfg = options(argc, argv);
 
-    int nrof_threads = 1;
+    DEBUG_EXPR(cfg.nrof_threads);
+    for(size_t i = 0; i < cfg.nrof_file_args; ++i)
+    {
+        puts(cfg.file_args[i]);
+    }
+
+    //TODO: Implement mdu solution
+
+    return 0;
+}
+
+/**
+    Parse command line options.
+    May mutate the order of arguments in the argv pointer array.
+
+    @param argc Number of arguments
+    @param argv Argument pointer array
+
+    @return struct cfg holding options configuration.
+        Does not return but exits with EXIT_FAILURE if incorrect options are passed.
+*/
+struct cfg options(int argc, char* argv[])
+{
+    struct cfg cfg = { .nrof_threads = 1 };
     int opt;
     while((opt = getopt(argc, argv, "j:")) != -1)
     {
         switch(opt)
         {
             case 'j':
-                nrof_threads = atoi(optarg);
-                if(nrof_threads < 1)
+                cfg.nrof_threads = atoi(optarg);
+                if(cfg.nrof_threads < 1)
                 {
                     fprintf(stderr, "Bad number of threads argument: %s\n", optarg);
                     exit(EXIT_FAILURE);
@@ -36,14 +67,7 @@ int main(int argc, char* argv[])
 
         }
     }
-    const size_t nrof_file_args = argc - optind;
-    const char *const *const file_args = (const char *const *const)(argv + optind);
-
-    DEBUG_EXPR(nrof_threads);
-    for(size_t i = 0; i < nrof_file_args; ++i)
-    {
-        puts(file_args[i]);
-    }
-
-    return 0;
+    cfg.nrof_file_args = argc - optind;
+    cfg.file_args = (const char *const *)(argv + optind);
+    return cfg;
 }
