@@ -1,3 +1,10 @@
+/** @file
+    Calculate disk usage of files
+
+    @author Aleksander Zdunek
+    @date 2026-10-07
+*/
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
