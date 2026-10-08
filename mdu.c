@@ -14,6 +14,7 @@
 #include <sys/types.h>
 #include <dirent.h>
 #include <assert.h>
+#include <pthread.h>
 
 #define DEBUG_EXPR(expr) fprintf(stderr, "%s:%d:%s(): %s: 0x%llX\n", __FILE__, __LINE__, __func__, #expr, (unsigned long long)(expr))
 
@@ -27,6 +28,13 @@ struct cfg options(int argc, char* argv[]);
 int64_t file_block_count(const char* const path);
 int64_t dir_block_count(const char* const path);
 
+typedef struct thread_context
+{
+    pthread_t thread_id;
+    const char* file_path;
+} thread_context_t;
+void* thread_worker(void* arg);
+
 int main(int argc, char* argv[])
 {
     const struct cfg cfg = options(argc, argv);
@@ -39,9 +47,24 @@ int main(int argc, char* argv[])
 
     for(size_t i = 0; i < cfg.nrof_file_args; ++i)
     {
-        int64_t blocks = file_block_count(cfg.file_args[i]);
-        if(blocks < 0) continue;
-        printf("%ld\t%s\n", blocks, cfg.file_args[i]);
+        thread_context_t ctx = {.file_path = cfg.file_args[i]};
+
+        int err = pthread_create(&ctx.thread_id, NULL, thread_worker, &ctx);
+        if(err)
+        {
+            fprintf(stderr, "Error creating thread for file %s: %s\n", ctx.file_path, strerror(err));
+            exit(EXIT_FAILURE);
+        }
+
+        int64_t thread_res;
+        if( (err = pthread_join(ctx.thread_id, (void**)&thread_res)) )
+        {
+            fprintf(stderr, "Error joining thread id %ld: %s\n", ctx.thread_id, strerror(err));
+            exit(EXIT_FAILURE);
+        }
+
+        if(thread_res < 0) continue;
+        printf("%ld\t%s\n", thread_res, ctx.file_path);
     }
 
     //TODO: Implement mdu solution
@@ -198,4 +221,13 @@ int64_t dir_block_count(const char* const path)
     }
 
     return sum_block_count;
+}
+
+void* thread_worker(void* arg)
+{
+    thread_context_t* p_ctx = (thread_context_t*)arg;
+
+    int64_t blocks = file_block_count(p_ctx->file_path);
+
+    return (void*)blocks;
 }
