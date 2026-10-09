@@ -1,5 +1,5 @@
 TARGET = mdu
-OBJ = mdu.o
+OBJ = mdu.o job_stack.o string_stack.o
 
 CC = gcc
 CFLAGS = -g -std=gnu11 -Werror -Wall -Wextra -Wpedantic -Wmissing-declarations \

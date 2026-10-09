@@ -15,8 +15,14 @@
 #include <dirent.h>
 #include <assert.h>
 #include <pthread.h>
+#include "job_stack.h"
 
 #define DEBUG_EXPR(expr) fprintf(stderr, "%s:%d:%s(): %s: 0x%llX\n", __FILE__, __LINE__, __func__, #expr, (unsigned long long)(expr))
+
+typedef struct global_context
+{
+    job_stack_t job_stack;
+} global_context_t;
 
 struct cfg
 {
@@ -38,12 +44,10 @@ void* thread_worker(void* arg);
 int main(int argc, char* argv[])
 {
     const struct cfg cfg = options(argc, argv);
-
     DEBUG_EXPR(cfg.nrof_threads);
-    // for(size_t i = 0; i < cfg.nrof_file_args; ++i)
-    // {
-    //     puts(cfg.file_args[i]);
-    // }
+
+    global_context_t global_context;
+    job_stack_init(&global_context.job_stack);
 
     for(size_t i = 0; i < cfg.nrof_file_args; ++i)
     {
