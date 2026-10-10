@@ -18,6 +18,7 @@
 #include "job_stack.h"
 
 #define DEBUG_EXPR(expr) fprintf(stderr, "%s:%d:%s(): %s: 0x%llX\n", __FILE__, __LINE__, __func__, #expr, (unsigned long long)(expr))
+#define DEBUG_STR(expr) fprintf(stderr, "%s:%d:%s(): %s: %s\n", __FILE__, __LINE__, __func__, #expr, (const char*)(expr))
 
 typedef struct global_context
 {
@@ -37,7 +38,8 @@ int64_t dir_block_count(const char* const path);
 typedef struct thread_context
 {
     pthread_t thread_id;
-    const char* file_path;
+    global_context_t* global_context;
+    int64_t block_sum;
 } thread_context_t;
 void* thread_worker(void* arg);
 
@@ -51,12 +53,21 @@ int main(int argc, char* argv[])
 
     for(size_t i = 0; i < cfg.nrof_file_args; ++i)
     {
-        thread_context_t ctx = {.file_path = cfg.file_args[i]};
+        // const char* initial_job = pathcat(".", cfg.file_args[i]); //TODO: strdup()
+        const char* initial_job = strdup(cfg.file_args[i]);
+        if(!initial_job)
+        {
+            fprintf(stderr, "Error allocating initial job string for file %s\n", cfg.file_args[i]);
+            exit(EXIT_FAILURE);
+        }
+
+        job_stack_push(&global_context.job_stack, initial_job);
+        thread_context_t ctx = {.global_context = &global_context};
 
         int err = pthread_create(&ctx.thread_id, NULL, thread_worker, &ctx);
         if(err)
         {
-            fprintf(stderr, "Error creating thread for file %s: %s\n", ctx.file_path, strerror(err));
+            fprintf(stderr, "Error creating thread for file %s: %s\n", initial_job, strerror(err));
             exit(EXIT_FAILURE);
         }
 
@@ -68,10 +79,12 @@ int main(int argc, char* argv[])
         }
 
         if(thread_res < 0) continue;
-        printf("%ld\t%s\n", thread_res, ctx.file_path);
+        printf("%ld\t%s\n", thread_res, cfg.file_args[i]);
     }
 
     //TODO: Implement mdu solution
+
+    job_stack_destroy(&global_context.job_stack);
 
     return 0;
 }
@@ -227,11 +240,80 @@ int64_t dir_block_count(const char* const path)
     return sum_block_count;
 }
 
+static void push_more_jobs(const char* path, job_stack_t* job_stack)
+{
+    DIR* dir = opendir(path);
+    if(!dir)
+    {
+        fprintf(stderr, "mdu: cannot open directory '%s': %s\n", path, strerror(errno));
+        return;
+    }
+
+    struct dirent* ent;
+    while( (errno = 0, ent = readdir(dir)) )
+    {
+        //Ignore current and parent directories
+        if(!strcmp(ent->d_name, ".") || !strcmp(ent->d_name, "..")) continue;
+
+        const char* ent_path = pathcat(path, ent->d_name);
+        if(!ent_path)
+        {
+            //TODO: Handle catastrophic error
+            DEBUG_EXPR("TODO: catastrophic error?");
+            abort();
+        }
+
+        if(!job_stack_push(job_stack, ent_path))
+        {
+            DEBUG_EXPR("TODO: job_stack_push() catastrophic error?");
+            free((char*)ent_path);
+            abort();
+        }
+    }
+    if(errno)
+    {
+        fprintf(stderr, "mdu: cannot read directory '%s': %s\n", path, strerror(errno));
+        //TODO:
+        DEBUG_EXPR("TODO: catastrophic error?");
+        //TODO: Also attempt to close directory? That'll likely also fail.
+        abort();
+    }
+
+    if(closedir(dir))
+    {
+        fprintf(stderr, "mdu: cannot close directory '%s': %s\n", path, strerror(errno));
+        //TODO: fix me
+        DEBUG_EXPR("TODO: catastrophic error?");
+        abort();
+    }
+
+}
+
 void* thread_worker(void* arg)
 {
-    thread_context_t* p_ctx = (thread_context_t*)arg;
+    thread_context_t* thread_context = (thread_context_t*)arg;
 
-    int64_t blocks = file_block_count(p_ctx->file_path);
+    const char* path = NULL;
+    while((path = job_stack_pop(&thread_context->global_context->job_stack)))
+    {
+        //stat the file path
+        struct stat statbuf;
+        if(lstat(path, &statbuf))
+        {
+            //TODO: fixme
+            fprintf(stderr, "mdu: cannot access '%s': %s\n", path, strerror(errno));
+            free((char*)path);
+            continue;
+        }
+        thread_context->block_sum += statbuf.st_blocks;
 
-    return (void*)blocks;
+        if(S_ISDIR(statbuf.st_mode))
+        {
+            push_more_jobs(path, &thread_context->global_context->job_stack);
+        }
+
+        free((char*)path);
+    }
+
+    return (void*)thread_context->block_sum;
 }
