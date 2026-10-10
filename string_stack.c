@@ -2,7 +2,7 @@
     A stack of string pointers
 
     @author Aleksander Zdunek
-    @date 2026-10-09
+    @date 2026-10-10
 */
 #include <stdlib.h>
 #include "string_stack.h"
