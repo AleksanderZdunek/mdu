@@ -2,7 +2,7 @@
     A stack of string pointers
 
     @author Aleksander Zdunek
-    @date 2026-10-09
+    @date 2026-10-10
 */
 #ifndef STRING_STACK_H
 #define STRING_STACK_H
@@ -40,6 +40,7 @@ bool string_stack_push(string_stack_t* stack, const char* string);
     @param stack Pointer to string_stack structure
 
     @return Pointer to the removed element
+        NULL if stack is empty (or the top element is NULL)
 */
 const char* string_stack_pop(string_stack_t* stack);
 
