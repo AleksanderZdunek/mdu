@@ -12,6 +12,7 @@
 #include <sys/types.h>
 #include <dirent.h>
 #include <assert.h>
+#include <stdbool.h>
 #include "block_count_multithreaded.h"
 #include "job_stack.h"
 #include "debug.h"
@@ -30,7 +31,7 @@ typedef struct thread_context
 
 static void* thread_worker(void* arg);
 static char* pathcat(const char* const path, const char* const name);
-static void push_more_jobs(const char* path, job_stack_t* job_stack);
+static bool push_more_jobs(const char* path, job_stack_t* job_stack);
 
 int64_t block_count_multithreaded(const char* path, const size_t nrof_threads)
 {
@@ -93,6 +94,10 @@ int64_t block_count_multithreaded(const char* path, const size_t nrof_threads)
 
 /**
     TODO: document
+
+    @param arg Pointer to a thread_context_t instance
+
+    @return TODO:
 */
 static void* thread_worker(void* arg)
 {
@@ -101,11 +106,10 @@ static void* thread_worker(void* arg)
     const char* path = NULL;
     while((path = job_stack_pop(&thread_context->shared_context->job_stack)))
     {
-        //stat the file path
+        //stat() the file path
         struct stat statbuf;
         if(lstat(path, &statbuf))
         {
-            //TODO: fixme
             fprintf(stderr, "mdu: cannot access '%s': %s\n", path, strerror(errno));
             free((char*)path);
             continue;
@@ -114,7 +118,12 @@ static void* thread_worker(void* arg)
 
         if(S_ISDIR(statbuf.st_mode))
         {
-            push_more_jobs(path, &thread_context->shared_context->job_stack);
+            if(!push_more_jobs(path, &thread_context->shared_context->job_stack))
+            {
+                //TODO: handle critical error
+                DEBUG_STR("TODO: handle error");
+                //TODO: rememeber to free path?
+            }
         }
 
         free((char*)path);
@@ -137,8 +146,7 @@ static char* pathcat(const char* const path, const char* const name)
     char* buf = malloc(buf_size);
     if(!buf)
     {
-        //TODO: Fix Me
-        DEBUG_EXPR("malloc() error");
+        DEBUG_PRINT("malloc() error");
         return NULL;
     }
     int res = snprintf(buf, buf_size, "%s/%s", path, name);
@@ -146,15 +154,27 @@ static char* pathcat(const char* const path, const char* const name)
     return buf;
 }
 
-static void push_more_jobs(const char* path, job_stack_t* job_stack)
+/**
+    Push files in a directory on to the job stack.
+
+    @param path to directory
+    @param job_stack Ponter to job stack
+
+    @return true if no errors or if there were file access error which should
+        be ignored.
+        false on critical error.
+        On error an error message is printed to stderr.
+*/
+static bool push_more_jobs(const char* path, job_stack_t* job_stack)
 {
     DIR* dir = opendir(path);
     if(!dir)
     {
         fprintf(stderr, "mdu: cannot open directory '%s': %s\n", path, strerror(errno));
-        return;
+        return true;
     }
 
+    bool critical_error = false;
     struct dirent* ent;
     while( (errno = 0, ent = readdir(dir)) )
     {
@@ -164,36 +184,28 @@ static void push_more_jobs(const char* path, job_stack_t* job_stack)
         const char* ent_path = pathcat(path, ent->d_name);
         if(!ent_path)
         {
-            //TODO: Handle catastrophic error
-            DEBUG_EXPR("TODO: catastrophic error?");
-            abort();
+            critical_error = true;
+            break;
         }
 
         if(!job_stack_push(job_stack, ent_path))
         {
-            DEBUG_EXPR("TODO: job_stack_push() catastrophic error?");
+            DEBUG_PRINT("Error pusing job on to stack");
+            critical_error = true;
             free((char*)ent_path);
-            abort();
+            break;
         }
     }
     if(errno)
     {
         fprintf(stderr, "mdu: cannot read directory '%s': %s\n", path, strerror(errno));
-        //TODO:
-        if(errno != EACCES)
-        {
-            DEBUG_EXPR("TODO: catastrophic error?");
-            //TODO: Also attempt to close directory? That'll likely also fail.
-            abort();
-        }
+        if(errno != EACCES) critical_error = true;
     }
 
     if(closedir(dir))
     {
         fprintf(stderr, "mdu: cannot close directory '%s': %s\n", path, strerror(errno));
-        //TODO: fix me
-        DEBUG_EXPR("TODO: catastrophic error?");
-        abort();
+        critical_error = true;
     }
-
+    return !critical_error;
 }
