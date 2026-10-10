@@ -20,7 +20,7 @@ string_stack_t string_stack_init(void)
 */
 static bool string_stack_grow(string_stack_t* stack)
 {
-    const char** new_stack = realloc(stack->stack, stack->capacity + 1);
+    const char** new_stack = realloc(stack->stack, (stack->capacity + 1) * sizeof(stack->stack[0]));
     if(!new_stack) return false;
     new_stack[stack->capacity] = NULL;
     stack->stack = new_stack;
