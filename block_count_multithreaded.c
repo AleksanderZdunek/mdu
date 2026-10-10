@@ -137,6 +137,7 @@ static char* pathcat(const char* const path, const char* const name)
     char* buf = malloc(buf_size);
     if(!buf)
     {
+        //TODO: Fix Me
         DEBUG_EXPR("malloc() error");
         return NULL;
     }
@@ -179,9 +180,12 @@ static void push_more_jobs(const char* path, job_stack_t* job_stack)
     {
         fprintf(stderr, "mdu: cannot read directory '%s': %s\n", path, strerror(errno));
         //TODO:
-        DEBUG_EXPR("TODO: catastrophic error?");
-        //TODO: Also attempt to close directory? That'll likely also fail.
-        abort();
+        if(errno != EACCES)
+        {
+            DEBUG_EXPR("TODO: catastrophic error?");
+            //TODO: Also attempt to close directory? That'll likely also fail.
+            abort();
+        }
     }
 
     if(closedir(dir))
