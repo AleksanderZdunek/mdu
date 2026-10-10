@@ -103,6 +103,10 @@ static void* thread_worker(void* arg)
 {
     thread_context_t* thread_context = (thread_context_t*)arg;
 
+    //TODO: Make sure threads don't quit before all work is done.
+    //      Just because the job stack is empty doesn't mean more jobs won't be
+    //      pushed by another thread.
+
     const char* path = NULL;
     while((path = job_stack_pop(&thread_context->shared_context->job_stack)))
     {
@@ -116,6 +120,7 @@ static void* thread_worker(void* arg)
         }
         thread_context->block_sum += statbuf.st_blocks;
 
+        //Push files in directory on to job stack
         if(S_ISDIR(statbuf.st_mode))
         {
             if(!push_more_jobs(path, &thread_context->shared_context->job_stack))
