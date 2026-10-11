@@ -6,6 +6,7 @@
     @date 2026-10-10
 */
 #include <string.h>
+#include <pthread.h>
 #include <sys/stat.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -17,9 +18,18 @@
 #include "job_stack.h"
 #include "debug.h"
 
+//TODO: Figure out a better name?
+struct condition
+{
+    pthread_mutex_t mtx;
+    pthread_cond_t cond;
+    size_t nrof_active_threads;
+};
+
 typedef struct shared_context
 {
     job_stack_t job_stack;
+    struct condition condition; //Allow threads to conditionally wait for more jobs or quit.
 } shared_context_t;
 
 typedef struct thread_context
@@ -30,13 +40,18 @@ typedef struct thread_context
 } thread_context_t;
 
 static void* thread_worker(void* arg);
+//TODO: static bool continue(struct condition*);
 static char* pathcat(const char* const path, const char* const name);
-static bool push_more_jobs(const char* path, job_stack_t* job_stack);
+static void signal_wait_condition(struct condition* c);
+static bool push_more_jobs(const char* path, job_stack_t* job_stack, struct condition* condition);
 
 int64_t block_count_multithreaded(const char* path, const size_t nrof_threads)
 {
     shared_context_t shared_context;
     job_stack_init(&shared_context.job_stack);
+    pthread_mutex_init(&shared_context.condition.mtx, NULL);
+    pthread_cond_init(&shared_context.condition.cond, NULL);
+    shared_context.condition.nrof_active_threads = nrof_threads;
 
     //Duplicate path to allow it to be free()'d after removing from the job stack.
     const char* initial_job = strdup(path);
@@ -89,7 +104,12 @@ int64_t block_count_multithreaded(const char* path, const size_t nrof_threads)
         }
     }
 
+    //Cleanup
     job_stack_destroy(&shared_context.job_stack);
+    int err = pthread_mutex_destroy(&shared_context.condition.mtx);
+    assert(!err);
+    err = pthread_cond_destroy(&shared_context.condition.cond);
+    assert(!err);
 
     return block_count;
 }
@@ -105,35 +125,62 @@ static void* thread_worker(void* arg)
 {
     thread_context_t* thread_context = (thread_context_t*)arg;
 
-    //TODO: Make sure threads don't quit before all work is done.
-    //      Just because the job stack is empty doesn't mean more jobs won't be
-    //      pushed by another thread.
-
-    const char* path = NULL;
-    while((path = job_stack_pop(&thread_context->shared_context->job_stack)))
-    {
-        //stat() the file path
-        struct stat statbuf;
-        if(lstat(path, &statbuf))
+    while(true) {
+        const char* path = NULL;
+        while((path = job_stack_pop(&thread_context->shared_context->job_stack)))
         {
-            fprintf(stderr, "mdu: cannot access '%s': %s\n", path, strerror(errno));
-            free((char*)path);
-            continue;
-        }
-        thread_context->block_sum += statbuf.st_blocks;
-
-        //Push files in directory on to job stack
-        if(S_ISDIR(statbuf.st_mode))
-        {
-            if(!push_more_jobs(path, &thread_context->shared_context->job_stack))
+            //stat() the file path
+            struct stat statbuf;
+            if(lstat(path, &statbuf))
             {
-                //TODO: handle critical error
-                DEBUG_STR("TODO: handle error");
-                //TODO: rememeber to free path?
+                fprintf(stderr, "mdu: cannot access '%s': %s\n", path, strerror(errno));
+                free((char*)path);
+                continue;
             }
+            thread_context->block_sum += statbuf.st_blocks;
+
+            //Push files in directory on to job stack
+            if(S_ISDIR(statbuf.st_mode))
+            {
+                if(!push_more_jobs(path,
+                    &thread_context->shared_context->job_stack,
+                    &thread_context->shared_context->condition)
+                )
+                {
+                    //TODO: handle critical error
+                    DEBUG_STR("TODO: handle error");
+                    //TODO: rememeber to free path?
+                }
+            }
+
+            free((char*)path);
         }
 
-        free((char*)path);
+        //Wait for new job or until all threads idle.
+        //TODO: break this out to separate function?
+        int err = pthread_mutex_lock(&thread_context->shared_context->condition.mtx);
+        assert(!err);
+        assert(thread_context->shared_context->condition.nrof_active_threads > 0);
+        thread_context->shared_context->condition.nrof_active_threads -= 1;
+        if(thread_context->shared_context->condition.nrof_active_threads == 0)
+        {
+            //Wake up all threads threads that it's quitting time
+            pthread_cond_broadcast(&thread_context->shared_context->condition.cond);
+            err = pthread_mutex_unlock(&thread_context->shared_context->condition.mtx);
+            assert(!err);
+            break;
+        }
+        pthread_cond_wait(&thread_context->shared_context->condition.cond,
+            &thread_context->shared_context->condition.mtx);
+        if(thread_context->shared_context->condition.nrof_active_threads == 0)
+        {
+            err = pthread_mutex_unlock(&thread_context->shared_context->condition.mtx);
+            assert(!err);
+            break;
+        }
+        thread_context->shared_context->condition.nrof_active_threads += 1;
+        err = pthread_mutex_unlock(&thread_context->shared_context->condition.mtx);
+        assert(!err);
     }
 
     return (void*)thread_context->block_sum;
@@ -162,6 +209,21 @@ static char* pathcat(const char* const path, const char* const name)
 }
 
 /**
+    Signal one waiting thread that a condition is updated
+
+    @param c Pointer to structure holding a phtread_cond_t and associated
+        pthread_mutex_t.
+*/
+static void signal_wait_condition(struct condition* c)
+{
+    int err = pthread_mutex_lock(&c->mtx);
+    assert(!err);
+    pthread_cond_signal(&c->cond);
+    err = pthread_mutex_unlock(&c->mtx);
+    assert(!err);
+}
+
+/**
     Push files in a directory on to the job stack.
 
     @param path to directory
@@ -172,7 +234,7 @@ static char* pathcat(const char* const path, const char* const name)
         false on critical error.
         On error an error message is printed to stderr.
 */
-static bool push_more_jobs(const char* path, job_stack_t* job_stack)
+static bool push_more_jobs(const char* path, job_stack_t* job_stack, struct condition* condition)
 {
     DIR* dir = opendir(path);
     if(!dir)
@@ -202,6 +264,8 @@ static bool push_more_jobs(const char* path, job_stack_t* job_stack)
             free((char*)ent_path);
             break;
         }
+        //Signal one waiting thread that there is a new job on the stack
+        signal_wait_condition(condition);
     }
     if(errno)
     {
