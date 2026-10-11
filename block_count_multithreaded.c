@@ -40,7 +40,7 @@ typedef struct thread_context
 } thread_context_t;
 
 static void* thread_worker(void* arg);
-//TODO: static bool continue(struct condition*);
+static bool wait_continue(struct condition* c);
 static char* pathcat(const char* const path, const char* const name);
 static void signal_wait_condition(struct condition* c);
 static bool push_more_jobs(const char* path, job_stack_t* job_stack, struct condition* condition);
@@ -125,7 +125,7 @@ static void* thread_worker(void* arg)
 {
     thread_context_t* thread_context = (thread_context_t*)arg;
 
-    while(true) {
+    do {
         const char* path = NULL;
         while((path = job_stack_pop(&thread_context->shared_context->job_stack)))
         {
@@ -155,35 +155,56 @@ static void* thread_worker(void* arg)
 
             free((char*)path);
         }
-
-        //Wait for new job or until all threads idle.
-        //TODO: break this out to separate function?
-        int err = pthread_mutex_lock(&thread_context->shared_context->condition.mtx);
-        assert(!err);
-        assert(thread_context->shared_context->condition.nrof_active_threads > 0);
-        thread_context->shared_context->condition.nrof_active_threads -= 1;
-        if(thread_context->shared_context->condition.nrof_active_threads == 0)
-        {
-            //Wake up all threads threads that it's quitting time
-            pthread_cond_broadcast(&thread_context->shared_context->condition.cond);
-            err = pthread_mutex_unlock(&thread_context->shared_context->condition.mtx);
-            assert(!err);
-            break;
-        }
-        pthread_cond_wait(&thread_context->shared_context->condition.cond,
-            &thread_context->shared_context->condition.mtx);
-        if(thread_context->shared_context->condition.nrof_active_threads == 0)
-        {
-            err = pthread_mutex_unlock(&thread_context->shared_context->condition.mtx);
-            assert(!err);
-            break;
-        }
-        thread_context->shared_context->condition.nrof_active_threads += 1;
-        err = pthread_mutex_unlock(&thread_context->shared_context->condition.mtx);
-        assert(!err);
-    }
+    } while(wait_continue(&thread_context->shared_context->condition));
 
     return (void*)thread_context->block_sum;
+}
+
+/**
+    Blocks until thread receives a signal that there are more jobs on the job
+    stack, or all threads are idle implying that no more job will be added to
+    the job stack.
+
+    Decrements the active threads counter condition variable when called.
+    Increaments the counter when returning true.
+    Wakes up all other waiting threads when called by the last thread to go
+    idle.
+
+    @param c Pointer to condition struct that holds a pthread_cond_t, associated
+        pthread_mutex_t, and counter of active threads.
+
+    @return true if should continue
+            false if no more jobs
+*/
+static bool wait_continue(struct condition* c)
+{
+    int err = pthread_mutex_lock(&c->mtx);
+    assert(!err);
+
+    assert(c->nrof_active_threads > 0);
+    c->nrof_active_threads -= 1;
+    if(c->nrof_active_threads == 0)
+    {
+        pthread_cond_broadcast(&c->cond);
+        err = pthread_mutex_unlock(&c->mtx);
+        assert(!err);
+        return false;
+    }
+
+    pthread_cond_wait(&c->cond, &c->mtx);
+
+    //Check the state of the condition variable again after waking up.
+    bool ret = false;
+    if(c->nrof_active_threads > 0)
+    {
+        c->nrof_active_threads += 1;
+        ret = true;
+    }
+
+    err = pthread_mutex_unlock(&c->mtx);
+    assert(!err);
+
+    return ret;
 }
 
 /**
