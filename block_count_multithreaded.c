@@ -89,6 +89,8 @@ int64_t block_count_multithreaded(const char* path, const size_t nrof_threads)
         }
     }
 
+    job_stack_destroy(&shared_context.job_stack);
+
     return block_count;
 }
 
