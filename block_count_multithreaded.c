@@ -216,8 +216,6 @@ static void* thread_worker(void* arg)
 
 /**
     Set condition variable error flag and broadcast change to waiting threads.
-    At this point the nrof_active_threads variable becomes essentially
-    meaningless.
 
     @param c Pointer to condition struct that holds a pthread_cond_t, associated
     pthread_mutex_t, and error boolean.
