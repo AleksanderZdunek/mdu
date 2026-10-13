@@ -39,6 +39,9 @@ typedef struct thread_context
     shared_context_t* shared_context;
 } thread_context_t;
 
+int64_t block_count_multithreaded(const char* path, const size_t nrof_threads);
+static size_t create_threads(thread_context_t* threads, const size_t nrof_threads,  shared_context_t* shared_context);
+static size_t join_threads(thread_context_t* threads, const size_t nrof_threads);
 static void* thread_worker(void* arg);
 static bool wait_continue(struct condition* c);
 static char* pathcat(const char* const path, const char* const name);
@@ -68,41 +71,20 @@ int64_t block_count_multithreaded(const char* path, const size_t nrof_threads)
         return -1;
     }
 
+    //Create threads
     thread_context_t threads[nrof_threads];
     memset(threads, 0, sizeof(threads));
-
-    //Create threads
-    int64_t block_count = 0; //return value
-    for(size_t i = 0; i < nrof_threads; ++i)
+    size_t nrof_threads_created = create_threads(threads, nrof_threads, &shared_context);
+    if(nrof_threads != nrof_threads_created)
     {
-        threads[i].shared_context = &shared_context;
-        int err = pthread_create(&threads[i].thread_id, NULL, thread_worker, &threads[i]);
-        if(err)
-        {
-            DEBUG_PRINT(strerror(err));
-            //TODO: how to handle error with running threads?
-            //TODO: pthread_cancel()?
-            block_count = -1;
-            break;
-        }
+        //TODO: call set_error(&shared_context->condition);
+        //TODO: implement void set_error(struct condition* c) with pthread_condition_broadcast()
+        //TODO: set error flag
     }
 
     //Wait for threads
-    for(size_t i = 0; i < nrof_threads; ++i)
-    {
-        void* thread_retval;
-        int err = pthread_join(threads[i].thread_id, &thread_retval);
-        if(err)
-        {
-            DEBUG_PRINT(strerror(err));
-            //TODO: Better error handling
-            continue;
-        }
-        if(block_count >= 0)
-        {
-            block_count += threads[i].block_sum;
-        }
-    }
+    int64_t block_count = join_threads(threads, nrof_threads_created);
+    //TODO: check error flag here
 
     //Cleanup
     job_stack_destroy(&shared_context.job_stack);
@@ -111,6 +93,68 @@ int64_t block_count_multithreaded(const char* path, const size_t nrof_threads)
     err = pthread_cond_destroy(&shared_context.condition.cond);
     assert(!err);
 
+    return block_count;
+}
+
+/**
+    Create threads
+
+    @param threads Array of thread_context_t objectes
+    @param nrof_threads Number of threads
+    @param shared_context Sets the shared_context field of each thread_context_t
+        to this pointer.
+
+    @return Number of threads successfully created. May be fewer than number of
+        threads requested if an error occured. threads[i].thread_id is
+        probably invalid for threads[i] indices i equal to or greater than
+        return value.
+
+*/
+static size_t create_threads(thread_context_t threads[], const size_t nrof_threads, shared_context_t* shared_context)
+{
+    size_t i = 0;
+    for(; i < nrof_threads; ++i)
+    {
+        threads[i].shared_context = shared_context;
+        int err = pthread_create(&threads[i].thread_id, NULL, thread_worker, &threads[i]);
+        if(err)
+        {
+            fprintf(stderr, "Error creating thread index %ld: %s\n", i, strerror(err));
+            break;
+        }
+    }
+    return i;
+}
+
+/**
+    Wait for threads.
+    Return the total number of blocks allocated for the file tree calculated
+    by all threads.
+
+    @param threads Array of thread_context_t objectes
+    @param nrof_threads Number of threads to join
+
+    @return Block count if all threads were successfull. -1 on error.
+*/
+static size_t join_threads(thread_context_t* threads, const size_t nrof_threads)
+{
+    int block_count = 0;
+    for(size_t i = 0; i < nrof_threads; ++i)
+    {
+        void* thread_retval; //TODO: check thread error status?
+        int err = pthread_join(threads[i].thread_id, &thread_retval);
+        if(err)
+        {
+            fprintf(stderr, "Error joining thread index %ld: %s\n", i, strerror(err));
+            block_count = -1;
+            //Need to join the rest of the threads even if one threw an error
+            continue;
+        }
+        if(block_count >= 0)
+        {
+            block_count += threads[i].block_sum;
+        }
+    }
     return block_count;
 }
 
