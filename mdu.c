@@ -1,6 +1,8 @@
 /** @file
     Calculate disk usage of files
 
+    TODO: More detail
+
     @author Aleksander Zdunek
     @date 2026-10-10
 */
