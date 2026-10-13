@@ -152,7 +152,7 @@ static size_t join_threads(thread_context_t* threads, const size_t nrof_threads)
     int block_count = 0;
     for(size_t i = 0; i < nrof_threads; ++i)
     {
-        void* thread_retval; //TODO: check thread error status?
+        void* thread_retval; //Unused. Left for reference.
         int err = pthread_join(threads[i].thread_id, &thread_retval);
         if(err)
         {
