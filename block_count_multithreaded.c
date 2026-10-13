@@ -16,6 +16,7 @@
 #include <dirent.h>
 #include <assert.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 #include "block_count_multithreaded.h"
 #include "job_stack.h"
 #include "debug.h"
@@ -26,7 +27,7 @@ struct condition
     pthread_mutex_t mtx;
     pthread_cond_t cond;
     size_t nrof_active_threads;
-    bool error;
+    atomic_bool error;
 };
 
 typedef struct shared_context
@@ -181,7 +182,10 @@ static void* thread_worker(void* arg)
 
     do {
         const char* path = NULL;
-        while((path = job_stack_pop(&thread_context->shared_context->job_stack)))
+        while(
+            (!thread_context->shared_context->condition.error) &&
+            (path = job_stack_pop(&thread_context->shared_context->job_stack))
+        )
         {
             //stat() the file path
             struct stat statbuf;
@@ -199,12 +203,7 @@ static void* thread_worker(void* arg)
                 if(!push_more_jobs(path,
                     &thread_context->shared_context->job_stack,
                     &thread_context->shared_context->condition)
-                )
-                {
-                    //TODO: handle critical error
-                    DEBUG_STR("TODO: handle error");
-                    //TODO: rememeber to free path?
-                }
+                ) raise_error_flag(&thread_context->shared_context->condition);
             }
 
             free((char*)path);
