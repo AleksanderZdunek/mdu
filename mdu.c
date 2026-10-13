@@ -23,16 +23,13 @@ int main(int argc, char* argv[])
 {
     const struct config config = options(argc, argv);
 
-    //TODO: Implement mdu solution
-
     for(size_t i = 0; i < config.nrof_file_args; ++i)
     {
         int64_t block_count = block_count_multithreaded(config.file_args[i], config.nrof_threads);
-        if(block_count < 0) continue;
+        if(block_count < 0) return 1;
         printf("%ld\t%s\n", block_count, config.file_args[i]);
     }
 
-    //TODO: return appropriate error code
     return 0;
 }
 
