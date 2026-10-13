@@ -20,8 +20,7 @@
     @param path to the file or directory
 
     @return Total block cound of file tree.
-        TODO: fix me
-        -1 if file could not be read.
+        Negative on error.
 */
 int64_t block_count_multithreaded(const char* path, const size_t nrof_threads);
 
