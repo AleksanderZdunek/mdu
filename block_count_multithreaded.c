@@ -7,6 +7,7 @@
     @author Aleksander Zdunek
     @date 2026-10-10
 */
+#include <stdio.h>
 #include <string.h>
 #include <pthread.h>
 #include <sys/stat.h>
@@ -19,7 +20,9 @@
 #include <stdatomic.h>
 #include "block_count_multithreaded.h"
 #include "job_stack.h"
-#include "debug.h"
+
+//Certain debug prints intentionally left behind as informative error messages
+#define DEBUG_PRINT(str) fprintf(stderr, "%s:%d:%s(): %s\n", __FILE__, __LINE__, __func__, str)
 
 //TODO: Figure out a better name?
 struct condition
