@@ -83,10 +83,7 @@ int64_t block_count_multithreaded(const char* path, const size_t nrof_threads)
     thread_context_t threads[nrof_threads];
     memset(threads, 0, sizeof(threads));
     size_t nrof_threads_created = create_threads(threads, nrof_threads, &shared_context);
-    if(nrof_threads != nrof_threads_created)
-    {
-        raise_error_flag(&shared_context.condition);
-    }
+    if(nrof_threads != nrof_threads_created) raise_error_flag(&shared_context.condition);
 
     //Wait for threads
     int64_t block_count = join_threads(threads, nrof_threads_created);
