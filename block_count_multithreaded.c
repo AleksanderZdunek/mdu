@@ -2,6 +2,8 @@
     Calculate device usage of file tree in 512-byte blocks,
     using multithreading.
 
+    TODO: go into little more detail?
+
     @author Aleksander Zdunek
     @date 2026-10-10
 */
