@@ -24,6 +24,7 @@ struct condition
     pthread_mutex_t mtx;
     pthread_cond_t cond;
     size_t nrof_active_threads;
+    bool error;
 };
 
 typedef struct shared_context
@@ -39,22 +40,28 @@ typedef struct thread_context
     shared_context_t* shared_context;
 } thread_context_t;
 
+//----------------------------- Table of contents ------------------------------
 int64_t block_count_multithreaded(const char* path, const size_t nrof_threads);
-static size_t create_threads(thread_context_t* threads, const size_t nrof_threads,  shared_context_t* shared_context);
+static size_t create_threads(thread_context_t* threads, const size_t nrof_threads, shared_context_t* shared_context);
 static size_t join_threads(thread_context_t* threads, const size_t nrof_threads);
 static void* thread_worker(void* arg);
+static void raise_error_flag(struct condition* c);
 static bool wait_continue(struct condition* c);
 static char* pathcat(const char* const path, const char* const name);
 static void signal_wait_condition(struct condition* c);
 static bool push_more_jobs(const char* path, job_stack_t* job_stack, struct condition* condition);
 
+//----------------------------- External functions -----------------------------
+
 int64_t block_count_multithreaded(const char* path, const size_t nrof_threads)
 {
     shared_context_t shared_context;
     job_stack_init(&shared_context.job_stack);
+    //TODO: Write a struct condition init()?
     pthread_mutex_init(&shared_context.condition.mtx, NULL);
     pthread_cond_init(&shared_context.condition.cond, NULL);
     shared_context.condition.nrof_active_threads = nrof_threads;
+    shared_context.condition.error = false;
 
     //Duplicate path to allow it to be free()'d after removing from the job stack.
     const char* initial_job = strdup(path);
@@ -77,14 +84,12 @@ int64_t block_count_multithreaded(const char* path, const size_t nrof_threads)
     size_t nrof_threads_created = create_threads(threads, nrof_threads, &shared_context);
     if(nrof_threads != nrof_threads_created)
     {
-        //TODO: call set_error(&shared_context->condition);
-        //TODO: implement void set_error(struct condition* c) with pthread_condition_broadcast()
-        //TODO: set error flag
+        raise_error_flag(&shared_context.condition);
     }
 
     //Wait for threads
     int64_t block_count = join_threads(threads, nrof_threads_created);
-    //TODO: check error flag here
+    if(shared_context.condition.error) block_count = -1;
 
     //Cleanup
     job_stack_destroy(&shared_context.job_stack);
@@ -95,6 +100,9 @@ int64_t block_count_multithreaded(const char* path, const size_t nrof_threads)
 
     return block_count;
 }
+
+
+//----------------------------- Internal functions -----------------------------
 
 /**
     Create threads
@@ -205,6 +213,26 @@ static void* thread_worker(void* arg)
 }
 
 /**
+    Set condition variable error flag and broadcast change to waiting threads.
+    At this point the nrof_active_threads variable becomes essentially
+    meaningless.
+
+    @param c Pointer to condition struct that holds a pthread_cond_t, associated
+    pthread_mutex_t, and error boolean.
+*/
+static void raise_error_flag(struct condition* c)
+{
+    int err = pthread_mutex_lock(&c->mtx);
+    assert(!err);
+
+    c->error = true;
+    pthread_cond_broadcast(&c->cond);
+
+    err = pthread_mutex_unlock(&c->mtx);
+    assert(!err);
+}
+
+/**
     Blocks until thread receives a signal that there are more jobs on the job
     stack, or all threads are idle implying that no more job will be added to
     the job stack.
@@ -227,7 +255,7 @@ static bool wait_continue(struct condition* c)
 
     assert(c->nrof_active_threads > 0);
     c->nrof_active_threads -= 1;
-    if(c->nrof_active_threads == 0)
+    if(c->nrof_active_threads == 0 || c->error)
     {
         pthread_cond_broadcast(&c->cond);
         err = pthread_mutex_unlock(&c->mtx);
@@ -239,7 +267,7 @@ static bool wait_continue(struct condition* c)
 
     //Check the state of the condition variable again after waking up.
     bool ret = false;
-    if(c->nrof_active_threads > 0)
+    if(c->nrof_active_threads > 0 && !c->error)
     {
         c->nrof_active_threads += 1;
         ret = true;
