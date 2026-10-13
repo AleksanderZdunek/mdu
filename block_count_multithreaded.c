@@ -45,6 +45,8 @@ typedef struct thread_context
 
 //----------------------------- Table of contents ------------------------------
 int64_t block_count_multithreaded(const char* path, const size_t nrof_threads);
+static void shared_context_init(shared_context_t* ctx);
+static void shared_context_clean(shared_context_t* ctx);
 static size_t create_threads(thread_context_t* threads, const size_t nrof_threads, shared_context_t* shared_context);
 static size_t join_threads(thread_context_t* threads, const size_t nrof_threads);
 static void* thread_worker(void* arg);
@@ -59,25 +61,21 @@ static bool push_more_jobs(const char* path, job_stack_t* job_stack, struct cond
 int64_t block_count_multithreaded(const char* path, const size_t nrof_threads)
 {
     shared_context_t shared_context;
-    job_stack_init(&shared_context.job_stack);
-    //TODO: Write a struct condition init()?
-    pthread_mutex_init(&shared_context.condition.mtx, NULL);
-    pthread_cond_init(&shared_context.condition.cond, NULL);
+    shared_context_init(&shared_context);
     shared_context.condition.nrof_active_threads = nrof_threads;
-    shared_context.condition.error = false;
 
     //Duplicate path to allow it to be free()'d after removing from the job stack.
     const char* initial_job = strdup(path);
     if(!initial_job)
     {
         DEBUG_PRINT("Error creating initial job");
-        job_stack_destroy(&shared_context.job_stack);
+        shared_context_clean(&shared_context);
         return -1;
     }
     if(!job_stack_push(&shared_context.job_stack, initial_job))
     {
         DEBUG_PRINT("Error pushing initial job");
-        job_stack_destroy(&shared_context.job_stack);
+        shared_context_clean(&shared_context);
         return -1;
     }
 
@@ -95,17 +93,43 @@ int64_t block_count_multithreaded(const char* path, const size_t nrof_threads)
     if(shared_context.condition.error) block_count = -1;
 
     //Cleanup
-    job_stack_destroy(&shared_context.job_stack);
-    int err = pthread_mutex_destroy(&shared_context.condition.mtx);
-    assert(!err);
-    err = pthread_cond_destroy(&shared_context.condition.cond);
-    assert(!err);
+    shared_context_clean(&shared_context);
 
     return block_count;
 }
 
 
 //----------------------------- Internal functions -----------------------------
+
+/**
+    Initialise data shared between all threads
+
+    @param[out] ctx Pointer to shared_context_t struct to initialise
+*/
+static void shared_context_init(shared_context_t* ctx)
+{
+    job_stack_init(&ctx->job_stack);
+
+    pthread_mutex_init(&ctx->condition.mtx, NULL);
+    pthread_cond_init(&ctx->condition.cond, NULL);
+    ctx->condition.nrof_active_threads = 0;
+    ctx->condition.error = false;
+}
+
+/**
+    Release resources held by shared context
+
+    @param ctx Pointer to initialised shared_context_t
+*/
+static void shared_context_clean(shared_context_t* ctx)
+{
+    job_stack_destroy(&ctx->job_stack);
+
+    int err = pthread_mutex_destroy(&ctx->condition.mtx);
+    assert(!err);
+    err = pthread_cond_destroy(&ctx->condition.cond);
+    assert(!err);
+}
 
 /**
     Create threads
