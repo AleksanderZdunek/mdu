@@ -1,10 +1,12 @@
 /** @file
     Calculate disk usage of files
-
-    TODO: More detail
+    Show 512-byte block count allocated to each file or file tree in a list.
+    The list of files is given as command line arguments.
+    The number of threads to use for calculating a file tree can be specified
+    with the -j option. Default is 1 thread.
 
     @author Aleksander Zdunek
-    @date 2026-10-10
+    @date 2026-10-14
 */
 #include <stdio.h>
 #include <unistd.h>
