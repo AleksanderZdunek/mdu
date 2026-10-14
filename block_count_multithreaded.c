@@ -25,13 +25,13 @@
 //Certain debug prints intentionally left behind as informative error messages
 #define DEBUG_PRINT(str) fprintf(stderr, "%s:%d:%s(): %s\n", __FILE__, __LINE__, __func__, str)
 
-//TODO: Figure out a better name?
+//Condition variable for thread synchronisation
 struct condition
 {
     pthread_mutex_t mtx;
     pthread_cond_t cond;
     size_t nrof_active_threads;
-    atomic_bool error;
+    atomic_bool error; //Atomic allows the error condition to be checked without locking the mutex
 };
 
 typedef struct shared_context
