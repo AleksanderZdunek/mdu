@@ -1,0 +1,43 @@
+.TH mdu 1 "14 October 2026" "Version 1.0"
+
+.SH NAME
+mdu - my disk usage, show storage device space used by a file tree
+
+.SH SYNOPSIS
+.BR mdu " [-j number_of_threads] file ..."
+
+.SH DESCRIPTION
+Show the number of 512-byte blocks allocated to each file specified in the
+command line. If a directory is specified the total block count of the whole
+directory sub-tree is shown. Symbolic links are counted but not followed,
+meaning that the file a symbolic link points to is not counted unless it exists
+in the same file tree. Hard links are counted as many times as they appear in
+the file tree.
+.br
+This is equivalent to the du(1) command:
+.EX
+	du -s -l -B512 [file ...]
+.EE
+.P
+The option -j may be used to specify the number of threads to use for
+calculating the size of each file tree. If -j is not given the number of threads
+used is 1.
+
+.SH OPTIONS
+.TP
+.BR "-j " number_of_threads
+Number of threads used for calculating a file tree
+
+.SH SOLUTION
+TODO
+
+.SH EXIT STATUS
+.IP 0
+On success.
+.IP 1
+On error.
+
+.SH AUTHORS
+Aleksander Zdunek <redacted>@cs.umu.se
+
+This program was an assignment for the course Systemnära Programmering 5DV254 at UMU.
