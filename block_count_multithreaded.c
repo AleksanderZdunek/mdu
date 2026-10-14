@@ -47,7 +47,7 @@ typedef struct thread_context
     shared_context_t* shared_context;
 } thread_context_t;
 
-//----------------------------- Table of contents ------------------------------
+//----------------------------- Order of contents ------------------------------
 int64_t block_count_multithreaded(const char* path, const size_t nrof_threads);
 static void shared_context_init(shared_context_t* ctx);
 static void shared_context_clean(shared_context_t* ctx);
@@ -56,8 +56,8 @@ static size_t join_threads(thread_context_t* threads, const size_t nrof_threads)
 static void* thread_worker(void* arg);
 static void raise_error_flag(struct condition* c);
 static bool wait_continue(struct condition* c);
-static char* pathcat(const char* const path, const char* const name);
 static void signal_wait_condition(struct condition* c);
+static char* pathcat(const char* const path, const char* const name);
 static bool push_more_jobs(const char* path, job_stack_t* job_stack, struct condition* condition);
 
 //----------------------------- External functions -----------------------------
@@ -324,6 +324,21 @@ static bool wait_continue(struct condition* c)
 }
 
 /**
+    Signal one waiting thread that a condition is updated
+
+    @param c Pointer to structure holding a phtread_cond_t and associated
+        pthread_mutex_t.
+*/
+static void signal_wait_condition(struct condition* c)
+{
+    int err = pthread_mutex_lock(&c->mtx);
+    assert(!err);
+    pthread_cond_signal(&c->cond);
+    err = pthread_mutex_unlock(&c->mtx);
+    assert(!err);
+}
+
+/**
     Concatenate a file name to a path with a '/'.
 
     @param path Leading part of the concatenated string
@@ -343,21 +358,6 @@ static char* pathcat(const char* const path, const char* const name)
     int res = snprintf(buf, buf_size, "%s/%s", path, name);
     assert((size_t)res == buf_size - 1);
     return buf;
-}
-
-/**
-    Signal one waiting thread that a condition is updated
-
-    @param c Pointer to structure holding a phtread_cond_t and associated
-        pthread_mutex_t.
-*/
-static void signal_wait_condition(struct condition* c)
-{
-    int err = pthread_mutex_lock(&c->mtx);
-    assert(!err);
-    pthread_cond_signal(&c->cond);
-    err = pthread_mutex_unlock(&c->mtx);
-    assert(!err);
 }
 
 /**
