@@ -5,7 +5,7 @@
     Implemented as a mutex guarded wrapper around string_stack.
 
     @author Aleksander Zdunek
-    @date 2026-10-09
+    @date 2026-10-14
 */
 #ifndef JOB_STACK_H
 #define JOB_STACK_H
@@ -20,12 +20,22 @@ typedef struct job_stack
 } job_stack_t;
 
 /**
-    TODO: Document
+    Initialize job stack.
+    An initialized job stack shall be freed with job_stack_destroy().
+
+    @param[out] js Pointer to uninitialized job_stack_t structure
 */
 void job_stack_init(job_stack_t* js);
 
 /**
-    TODO: Document
+    Push a file path onto the stack.
+
+    @note The file path string should be dynamically allocated and freeable with
+        free(), or else the file path should be removed from the stack before
+        calling job_stack_destroy() on the stack.
+
+    @param js Pointer to job stack
+    @param path File path string.
 
     @return true on success
             false on failure to grow the capacity of the stack to accomodate the
@@ -34,12 +44,22 @@ void job_stack_init(job_stack_t* js);
 bool job_stack_push(job_stack_t* js, const char* path);
 
 /**
-    TODO: Document
+    Remove the top element from the stack.
+
+    @param @param js Pointer to job stack
+
+    @return Pointer to the removed element
+        NULL if stack is empty (or the top element is NULL)
 */
 const char* job_stack_pop(job_stack_t* js);
 
 /**
-    TODO: Document
+    Free initialized job stack.
+
+    @warning Will call free() on each element left on the stack. Ensure that
+        each element is a dynamically allocated valid string pointer.
+
+    @param js Pointer to job stack
 */
 void job_stack_destroy(job_stack_t* js);
 

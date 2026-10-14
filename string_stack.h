@@ -1,8 +1,8 @@
 /** @file
-    A stack of string pointers
+    A stack of string pointers, with dynamically growing capacity.
 
     @author Aleksander Zdunek
-    @date 2026-10-10
+    @date 2026-10-14
 */
 #ifndef STRING_STACK_H
 #define STRING_STACK_H

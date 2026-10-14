@@ -1,4 +1,12 @@
-//TODO: file header comment
+/** @file
+    A stack of jobs for threads to do. Like a job queue but easier to implement.
+    A job is described by a file path string for a file that needs to be
+    handled.
+    Implemented as a mutex guarded wrapper around string_stack.
+
+    @author Aleksander Zdunek
+    @date 2026-10-14
+*/
 
 #include <errno.h>
 #include <assert.h>
