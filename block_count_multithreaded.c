@@ -2,10 +2,11 @@
     Calculate device usage of file tree in 512-byte blocks,
     using multithreading.
 
-    TODO: go into little more detail?
+    Each thread picks file paths from a job stack, adds the file block count to
+    a sum total, and adds any discoverd sub-tree file paths to the job stack.
 
     @author Aleksander Zdunek
-    @date 2026-10-10
+    @date 2026-10-14
 */
 #include <stdio.h>
 #include <string.h>
@@ -194,11 +195,31 @@ static size_t join_threads(thread_context_t* threads, const size_t nrof_threads)
 }
 
 /**
-    TODO: document
+    Sum the number 512-byte blocks allocated to files in the file system.
+
+    Passed as start_routine to phtreads_create(). Intended to work concurrently
+    with an arbitrary number of threads running the same routine.
+
+    Pops a file path from a job stack and adds the allocated block count for
+    that file to a thread-local sum. If the file is a directory, adds the paths
+    for the files directly one level under the directory to the job stack.
+    Continues doing this until the job stack is empty, then waits for a signal
+    from other threads that either a new file path is available on the job stack
+    or no more file paths will be added to the job stack. In the latter case
+    returns and the block sums for all threads should be summed for a total
+    allocated block count of the whole file tree.
+
+    File paths are absolute or relative to current working directory.
+    Symbolic links are not followed, meaning the allocated blocks for the
+    symlink itself are counted, but not the file the symlink points to.
+    Hard links may be counted duplicate times.
 
     @param arg Pointer to a thread_context_t instance
 
-    @return TODO:
+    @return The thread sum of blocks, cast to void*. This pointer shall NOT be
+        dereferenced.
+        The same value is stored in thread_context_t::block_sum and is probably
+        better read from the thread_context_t instance.
 */
 static void* thread_worker(void* arg)
 {
