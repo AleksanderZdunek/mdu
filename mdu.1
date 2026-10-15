@@ -1,10 +1,11 @@
-.TH mdu 1 "14 October 2026" "Version 1.0"
+.TH mdu 1 "15 October 2026" "Version 1.0"
 
 .SH NAME
-mdu - my disk usage, show storage device space used by a file tree
+mdu \- my disk usage, show storage device space used by a file tree
 
 .SH SYNOPSIS
-.BR mdu " [-j number_of_threads] file ..."
+.B mdu
+.RI "[-j " number_of_threads "] " file " ..."
 
 .SH DESCRIPTION
 Show the number of 512-byte blocks allocated to each file specified in the
@@ -25,7 +26,7 @@ used is 1.
 
 .SH OPTIONS
 .TP
-.BR "-j " number_of_threads
+.BI "-j " number_of_threads
 Number of threads used for calculating a file tree
 
 .SH SOLUTION
