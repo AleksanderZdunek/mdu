@@ -30,6 +30,104 @@ used is 1.
 Number of threads used for calculating a file tree
 
 .SH SOLUTION
+The solution is based around a job stack shared between all worker threades.
+A job here is defined as a file path to query. Threads pop jobs from the stack
+one at a time and query the file block count with lstat(2). The block count is
+added to a thread sum. If the file is a directory then the path to each file in
+the directory is pushed as a new job onto the stack. Once there are no more jobs
+to do the sum of the thread block count sums is printed.
+.P
+Push and pop operation on the job stack are guarded by a mutex, ensuring only
+one thread at a time can modify the stack. This is an obvious perfomance
+bottleneck in the solution.
+The reason for using a job stack rather than a job queue is that a stack is
+simpler to implement.
+.P
+A conditon variable (see pthread_cond_init(3)) predicated on a counter of active
+threads is used to ensure the full pool of worker threads are available for jobs
+as needed. Any thread that finds the job stack empty marks itself as inactive by
+decrementing the active threads counter and waits for the condition variable.
+When a thread pushes a job on the stack it sends a signal to one waiting thread
+(pthread_cond_signal(3)). A thread that wakes up from waiting on the conditon
+variable marks itsef active by increasing the active threads counter and
+continues to poping the job stack, unless counter has reached zero. The last
+thread that marks itself as inactive broadcasts as signal to all waiting threads
+(phtread_cond_broadcast(3)) and exits. Threads waking up from waiting on the
+condition variable to find that there are no active threads, exit. Operations
+on the condition variable and the predicate are guarded by an associated mutex
+to avoid race conditions, as per the pthread_cond_wait(3) documentation.
+
+.SS Main algorithm
+.IP 1. 3
+Push file path on job stack
+.IP 2.
+Initialize counter of active threads to number of threads
+.IP 3.
+Create threads
+.IP 4.
+In each thread:
+.RS
+.IP 4.1. 5
+While job stack has jobs:
+.RS
+.IP 4.1.1. 7
+Pop file path from job stack
+.IP 4.1.2.
+lstat(2) file path
+.IP 4.1.3.
+Add block count to thread sum
+.IP 4.1.4.
+If file is directory:
+.RS
+.IP 4.1.4.1. 9
+Open directory stream with opendir(3)
+.IP 4.1.4.2.
+While directory stream has entries:
+.br
+(see readdir(3))
+.RS
+.IP 4.1.4.2.1. 11
+Read filename from directory stream entry
+.IP 4.1.4.2.2.
+Concatenate directory path with file name, with '/' in between
+.IP 4.1.4.2.3.
+Push file path onto job stack
+.IP 4.1.4.2.3.
+Signal one waiting thread condition (pthread_cond_signal(3))
+.RE
+.IP 4.1.4.3
+Close directory stream with closedir(3)
+.RE
+.RE
+.IP 4.2.
+Decrease counter of active threads by 1
+.IP 4.3.
+If no active threads:
+.RS
+.IP 4.3.1 7
+Broadcast condition signal to all waiting threads (pthread_cond_broadcast(3))
+.IP 4.3.2
+Go to step 4.6.
+.RE
+.IP 4.4
+Wait for condition signal (pthread_cond_wait(3))
+.IP 4.5.
+If any thread is active:
+.RS
+.IP 4.5.1 7
+Increase counter of active threads by 1
+.IP 4.5.2
+Go to step 4.1.
+.RE
+.IP 4.6.
+Exit thread with block count sum as thread result
+.RE
+.IP 5.
+Join threads
+.IP 6.
+Sum thread results
+
+.SS Performance analysis
 TODO
 
 .SH EXIT STATUS
