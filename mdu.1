@@ -30,32 +30,33 @@ used is 1.
 Number of threads used for calculating a file tree
 
 .SH SOLUTION
-The solution is based around a job stack shared between all worker threades.
+The solution is based around a job stack shared between all worker threads.
 A job here is defined as a file path to query. Threads pop jobs from the stack
 one at a time and query the file block count with lstat(2). The block count is
 added to a thread sum. If the file is a directory then the path to each file in
 the directory is pushed as a new job onto the stack. Once there are no more jobs
 to do the sum of the thread block count sums is printed.
 .P
-Push and pop operation on the job stack are guarded by a mutex, ensuring only
-one thread at a time can modify the stack. This is an obvious perfomance
+Push and pop operations on the job stack are guarded by a mutex, ensuring only
+one thread at a time can modify the stack. This is an obvious performance
 bottleneck in the solution.
 The reason for using a job stack rather than a job queue is that a stack is
 simpler to implement.
 .P
-A conditon variable (see pthread_cond_init(3)) predicated on a counter of active
-threads is used to ensure the full pool of worker threads are available for jobs
-as needed. Any thread that finds the job stack empty marks itself as inactive by
-decrementing the active threads counter and waits for the condition variable.
-When a thread pushes a job on the stack it sends a signal to one waiting thread
-(pthread_cond_signal(3)). A thread that wakes up from waiting on the conditon
-variable marks itsef active by increasing the active threads counter and
-continues to poping the job stack, unless counter has reached zero. The last
-thread that marks itself as inactive broadcasts as signal to all waiting threads
-(phtread_cond_broadcast(3)) and exits. Threads waking up from waiting on the
-condition variable to find that there are no active threads, exit. Operations
-on the condition variable and the predicate are guarded by an associated mutex
-to avoid race conditions, as per the pthread_cond_wait(3) documentation.
+A condition variable (see pthread_cond_init(3)) predicated on a counter of
+active threads is used to ensure the full pool of worker threads are available
+for jobs as needed. Any thread that finds the job stack empty marks itself as
+inactive by decrementing the active threads counter and waits for the condition
+variable. When a thread pushes a job on the stack it sends a signal to one
+waiting thread (pthread_cond_signal(3)). A thread that wakes up from waiting on
+the condition variable marks itself active by increasing the active threads
+counter and continues to popping the job stack, unless counter has reached zero.
+The last thread that marks itself as inactive broadcasts as signal to all
+waiting threads (phtread_cond_broadcast(3)) and exits. Threads waking up from
+waiting on the condition variable to find that there are no active threads,
+exit. Operations on the condition variable and the predicate are guarded by an
+associated mutex to avoid race conditions, as per the pthread_cond_wait(3)
+documentation.
 
 .SS Main algorithm
 .IP 1. 3
