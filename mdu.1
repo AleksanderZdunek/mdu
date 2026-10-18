@@ -136,14 +136,14 @@ with number of threads 1 to 100 were run on the directory /pkg on
 Selected values from this run are presented in Table 1. It shows a clear
 performance improvement for each thread added down to 5 or 6 threads, with the
 best performance increase running 3.7 times faster than a single worker thread.
-Number of threads beyond 6 hampers performance slighty but seems to mostly
+Number of threads beyond 6 hampers performance slightly but seems to mostly
 plateau with fluctuations. A plot of all data points shown in Table 2 shows a
-a trend of slight performance decrease on average as number of threads grows
+trend of slight performance decrease on average as number of threads grows
 towards 100.
 
 .P
 It seems clear that reading files and directories is a slow enough process that
-parallellizing the task can significantly increase performance despite the
+parallelizing the task can significantly increase performance despite the
 bottleneck of synchronising serial access to the job queue resource. Once thread
 access to the resource becomes saturated however, adding more threads does
 nothing for performance as more threads will spend more time idle waiting for
@@ -155,7 +155,7 @@ numbers of threads.
 .P
 .BR "Table 1:" " Execution real time of the command
 \%"\fBmdu\fR\~\%/pkg\~\%-j\~\%\fIn\fR"
-.RI "for select number of threads " n .
+.RI "for select a number of threads " n .
 .TS
 box;
 CbCb,NN.
@@ -186,8 +186,8 @@ _
 Following is a plot of the full set of data points of execution time vs. number
 of threads from the test run on
 .IR Itchy "."
-For the plot to rendere correctly on small
-terminals it may be neccesary view this man(1) page with something like the -S
+For the plot to render correctly on small
+terminals it may be necessary view this man(1) page with something like the -S
 option for less(1). Ex:
 .EX
     LESS=-S man ./mdu.1
