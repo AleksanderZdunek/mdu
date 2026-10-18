@@ -6,7 +6,7 @@
     with the -j option. Default is 1 thread.
 
     @author Aleksander Zdunek
-    @date 2026-10-14
+    @date 2026-10-18
 */
 #include <stdio.h>
 #include <unistd.h>
@@ -70,5 +70,13 @@ struct config options(int argc, char* argv[])
     }
     cfg.nrof_file_args = argc - optind;
     cfg.file_args = (const char *const *)(argv + optind);
+
+    //Because apparently this is what test 7/13 in the public test suite expects
+    if(!cfg.nrof_file_args)
+    {
+        fprintf(stderr, "usage: ./mdu {FILE}\n");
+        exit(EXIT_FAILURE);
+    }
+
     return cfg;
 }
