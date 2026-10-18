@@ -133,11 +133,12 @@ TODO
 .P
 .BR "Table 1:" " Execution real time of the command
 \%"\fBmdu\fR\~\%/pkg\~\%-j\~\%\fIn\fR"
-.RI "for select number of threads " n ", on " itchy "."
+.RI "for select number of threads " n ", on " Itchy "."
 .TS
 box;
 CbCb,NN.
 #Threads	Time(seconds)
+_
 1	7.306
 2	4.418
 3	3.018
@@ -158,6 +159,41 @@ CbCb,NN.
 90	2.607
 100	2.155
 .TE
+
+.P
+Following is a plot of the full set of data points of execution time vs. number
+of threads from the test run on
+.IR Itchy "."
+For the plot to rendere correctly on small
+terminals it may be neccesary view this man(1) page with something like the -S
+option for less(1). Ex:
+.EX
+    LESS=-S man ./mdu.1
+.EE
+.P
+.BR "Table 2: " "Plot of the full data set for Table 1, rounded to the nearest
+½-second.
+.TS
+C.
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Time(s)│                                                                                                     │
+│   7.5  │*                                                                                                    │
+│   7.0  │                                                                                                     │
+│   6.5  │                                                                                                     │
+│   6.0  │                                                                                                     │
+│   5.5  │                                                                                                     │
+│   5.0  │                                                                                                     │
+│   4.5  │ *                                                                                                   │
+│   4.0  │                                                                                                     │
+│   3.5  │                                                                                                     │
+│   3.0  │  *                                                                           *           *   *      │
+│   2.5  │   *  * ******* * * *** * *  ****** ** * **** ******** **** ***** ********* ** *** * *****  ** * **  │
+│   2.0  │    ** *       * * *   * * **      *  * *    *        *    *     *         *      * *      *    *  * │
+│ ───────┴┬┬┬┬┬┬┬┬─┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬ │
+│ Threads 12345678 10        20        30        40        50        60        70        80        90       100│
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+.TE
+
 
 .SH EXIT STATUS
 .IP 0
