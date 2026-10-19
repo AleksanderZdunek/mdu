@@ -6,11 +6,12 @@
     with the -j option. Default is 1 thread.
 
     @author Aleksander Zdunek
-    @date 2026-10-18
+    @date 2026-10-19
 */
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <string.h>
 #include "block_count_multithreaded.h"
 
 struct config
@@ -25,14 +26,26 @@ int main(int argc, char* argv[])
 {
     const struct config config = options(argc, argv);
 
+    int exit_status = 0;
     for(size_t i = 0; i < config.nrof_file_args; ++i)
     {
-        int64_t block_count = block_count_multithreaded(config.file_args[i], config.nrof_threads);
-        if(block_count < 0) return 1;
-        printf("%ld\t%s\n", block_count, config.file_args[i]);
+        struct result result =
+            block_count_multithreaded(config.file_args[i], config.nrof_threads);
+        switch(result.error)
+        {
+            case EACCES:
+                exit_status = 1;
+                //Fallthrough
+            case 0:
+                printf("%ld\t%s\n", result.block_count, config.file_args[i]);
+                break;
+            default:
+                fprintf(stderr, "Critical error: %s", strerror(result.error));
+                return 1;
+        }
     }
 
-    return 0;
+    return exit_status;
 }
 
 /**

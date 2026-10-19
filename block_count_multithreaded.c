@@ -6,13 +6,12 @@
     a sum total, and adds any discoverd sub-tree file paths to the job stack.
 
     @author Aleksander Zdunek
-    @date 2026-10-14
+    @date 2026-10-19
 */
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
 #include <sys/stat.h>
-#include <errno.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <dirent.h>
@@ -48,21 +47,21 @@ typedef struct thread_context
 } thread_context_t;
 
 //----------------------------- Order of contents ------------------------------
-int64_t block_count_multithreaded(const char* path, const size_t nrof_threads);
+struct result block_count_multithreaded(const char* path, const size_t nrof_threads);
 static void shared_context_init(shared_context_t* ctx);
 static void shared_context_clean(shared_context_t* ctx);
 static size_t create_threads(thread_context_t* threads, const size_t nrof_threads, shared_context_t* shared_context);
-static size_t join_threads(thread_context_t* threads, const size_t nrof_threads);
+static struct result join_threads(thread_context_t* threads, const size_t nrof_threads);
 static void* thread_worker(void* arg);
 static void raise_error_flag(struct condition* c);
 static bool wait_continue(struct condition* c);
 static void signal_wait_condition(struct condition* c);
 static char* pathcat(const char* const path, const char* const name);
-static bool push_more_jobs(const char* path, job_stack_t* job_stack, struct condition* condition);
+static int push_more_jobs(const char* path, job_stack_t* job_stack, struct condition* condition);
 
 //----------------------------- External functions -----------------------------
 
-int64_t block_count_multithreaded(const char* path, const size_t nrof_threads)
+struct result block_count_multithreaded(const char* path, const size_t nrof_threads)
 {
     shared_context_t shared_context;
     shared_context_init(&shared_context);
@@ -74,13 +73,13 @@ int64_t block_count_multithreaded(const char* path, const size_t nrof_threads)
     {
         DEBUG_PRINT("Error creating initial job");
         shared_context_clean(&shared_context);
-        return -1;
+        return (struct result){.error = ENOMEM};
     }
     if(!job_stack_push(&shared_context.job_stack, initial_job))
     {
         DEBUG_PRINT("Error pushing initial job");
         shared_context_clean(&shared_context);
-        return -1;
+        return (struct result){.error = ENOMEM};
     }
 
     //Create threads
@@ -90,13 +89,17 @@ int64_t block_count_multithreaded(const char* path, const size_t nrof_threads)
     if(nrof_threads != nrof_threads_created) raise_error_flag(&shared_context.condition);
 
     //Wait for threads
-    int64_t block_count = join_threads(threads, nrof_threads_created);
-    if(shared_context.condition.error) block_count = -1;
+    struct result res = join_threads(threads, nrof_threads_created);
+    if(shared_context.condition.error)
+    {
+        assert(res.error);
+        assert(res.error != EACCES);
+    }
 
     //Cleanup
     shared_context_clean(&shared_context);
 
-    return block_count;
+    return res;
 }
 
 
@@ -164,34 +167,44 @@ static size_t create_threads(thread_context_t threads[], const size_t nrof_threa
 
 /**
     Wait for threads.
-    Return the total number of blocks allocated for the file tree calculated
-    by all threads.
+    Return a struct holding the total number of blocks allocated for the file
+    tree calculated by all threads and an error code if an error occurred.
 
     @param threads Array of thread_context_t objectes
     @param nrof_threads Number of threads to join
 
-    @return Block count if all threads were successfull. -1 on error.
+    @return Struct with block count and error code.
+        Error code is 0 on success.
+        Error code is EACCES if a recoverable file access error occured. In this case the
+        thread block sum is still considered meaningful but will not include
+        the block count for files that could not be accessed.
+        Other error code on critical error.
 */
-static size_t join_threads(thread_context_t* threads, const size_t nrof_threads)
+static struct result join_threads(thread_context_t* threads, const size_t nrof_threads)
 {
-    int block_count = 0;
+    struct result r = {
+        .block_count = 0,
+        .error = 0
+    };
+
     for(size_t i = 0; i < nrof_threads; ++i)
     {
-        void* thread_retval; //Unused. Left for reference.
-        int err = pthread_join(threads[i].thread_id, &thread_retval);
-        if(err)
+        intptr_t thread_error;
+        int join_error = pthread_join(threads[i].thread_id, (void**)&thread_error);
+        if(join_error)
         {
-            fprintf(stderr, "Error joining thread index %ld: %s\n", i, strerror(err));
-            block_count = -1;
+            fprintf(stderr, "Error joining thread index %ld: %s\n", i, strerror(join_error));
+            r.error = join_error;
             //Need to join the rest of the threads even if one threw an error
             continue;
         }
-        if(block_count >= 0)
+        r.block_count += threads[i].block_sum;
+        if(thread_error)
         {
-            block_count += threads[i].block_sum;
+            if(0 == r.error || EACCES == r.error) r.error = thread_error;
         }
     }
-    return block_count;
+    return r;
 }
 
 /**
@@ -216,14 +229,18 @@ static size_t join_threads(thread_context_t* threads, const size_t nrof_threads)
 
     @param arg Pointer to a thread_context_t instance
 
-    @return The thread sum of blocks, cast to void*. This pointer shall NOT be
-        dereferenced.
-        The same value is stored in thread_context_t::block_sum and is probably
-        better read from the thread_context_t instance.
+    @return Integer error code cast to a void pointer. This pointer shall NOT
+        be dereferenced.
+        0 if no errors occured.
+        EACCES if a recoverable file access error occured. In this case the
+        thread block sum is still considered meaningful but will not include
+        the block count for files that could not be accessed.
+        Other error code on critical error.
 */
 static void* thread_worker(void* arg)
 {
     thread_context_t* thread_context = (thread_context_t*)arg;
+    intptr_t error_status = 0;
 
     do {
         const char* path = NULL;
@@ -238,6 +255,7 @@ static void* thread_worker(void* arg)
             {
                 fprintf(stderr, "mdu: cannot access '%s': %s\n", path, strerror(errno));
                 free((char*)path);
+                error_status = EACCES;
                 continue;
             }
             thread_context->block_sum += statbuf.st_blocks;
@@ -245,17 +263,24 @@ static void* thread_worker(void* arg)
             //Push files in directory on to job stack
             if(S_ISDIR(statbuf.st_mode))
             {
-                if(!push_more_jobs(path,
+                int err = push_more_jobs(path,
                     &thread_context->shared_context->job_stack,
-                    &thread_context->shared_context->condition)
-                ) raise_error_flag(&thread_context->shared_context->condition);
+                    &thread_context->shared_context->condition);
+                if(err)
+                {
+                    error_status = err;
+                    if(err != EACCES) //Consider EACCES recoverable error
+                    {
+                        raise_error_flag(&thread_context->shared_context->condition);
+                    }
+                }
             }
 
             free((char*)path);
         }
     } while(wait_continue(&thread_context->shared_context->condition));
 
-    return (void*)thread_context->block_sum;
+    return (void*)error_status;
 }
 
 /**
@@ -366,23 +391,22 @@ static char* pathcat(const char* const path, const char* const name)
     @param path to directory
     @param job_stack Ponter to job stack
 
-    @return true if no errors or if there were file access error which should
-        be ignored.
-        false on critical error.
-        On error an error message is printed to stderr.
+    @return 0 on success.
+        EACCES on file access error.
+        Other error code on critical error. See also <errno.h>.
 */
-static bool push_more_jobs(const char* path, job_stack_t* job_stack, struct condition* condition)
+static int push_more_jobs(const char* path, job_stack_t* job_stack, struct condition* condition)
 {
     DIR* dir = opendir(path);
     if(!dir)
     {
         fprintf(stderr, "mdu: cannot open directory '%s': %s\n", path, strerror(errno));
-        return true;
+        return EACCES;
     }
 
-    bool critical_error = false;
     struct dirent* ent;
-    while( (errno = 0, ent = readdir(dir)) )
+    errno = 0;
+    while( (ent = readdir(dir)) )
     {
         //Ignore current and parent directories
         if(!strcmp(ent->d_name, ".") || !strcmp(ent->d_name, "..")) continue;
@@ -390,30 +414,31 @@ static bool push_more_jobs(const char* path, job_stack_t* job_stack, struct cond
         const char* ent_path = pathcat(path, ent->d_name);
         if(!ent_path)
         {
-            critical_error = true;
+            errno = ENOMEM;
             break;
         }
 
         if(!job_stack_push(job_stack, ent_path))
         {
             DEBUG_PRINT("Error pusing job on to stack");
-            critical_error = true;
             free((char*)ent_path);
+            errno = ENOMEM;
             break;
         }
         //Signal one waiting thread that there is a new job on the stack
         signal_wait_condition(condition);
+
+        errno = 0;
     }
-    if(errno)
+    if(errno && (errno == EACCES))
     {
         fprintf(stderr, "mdu: cannot read directory '%s': %s\n", path, strerror(errno));
-        if(errno != EACCES) critical_error = true;
     }
 
     if(closedir(dir))
     {
         fprintf(stderr, "mdu: cannot close directory '%s': %s\n", path, strerror(errno));
-        critical_error = true;
+        errno = EBADF; //Invalid directory stream descriptor
     }
-    return !critical_error;
+    return errno;
 }
